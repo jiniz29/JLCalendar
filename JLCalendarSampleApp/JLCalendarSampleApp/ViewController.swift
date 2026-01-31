@@ -27,6 +27,8 @@ class ViewController: UIViewController, JLCalendarViewDelegate {
         monthLabel.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(showDatePicker)))
 
         displayModeControl.selectedSegmentIndex = 0
+        displayModeControl.setTitleTextAttributes([.font: UIFont.systemFont(ofSize: 12, weight: .medium)], for: .normal)
+        displayModeControl.setTitleTextAttributes([.font: UIFont.systemFont(ofSize: 12, weight: .semibold)], for: .selected)
         displayModeControl.addTarget(self, action: #selector(displayModeChanged), for: .valueChanged)
         displayModeControl.translatesAutoresizingMaskIntoConstraints = false
 
@@ -48,6 +50,7 @@ class ViewController: UIViewController, JLCalendarViewDelegate {
             monthLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             displayModeControl.centerYAnchor.constraint(equalTo: monthLabel.centerYAnchor),
             displayModeControl.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            displayModeControl.heightAnchor.constraint(equalToConstant: 28),
             
             calendarView.topAnchor.constraint(equalTo: monthLabel.bottomAnchor, constant: 16),
             calendarView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
