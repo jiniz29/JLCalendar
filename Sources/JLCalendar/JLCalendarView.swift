@@ -10,6 +10,8 @@ import UIKit
 public protocol JLCalendarViewDelegate: AnyObject {
     func calendarView(_ calendarView: JLCalendarView, didSelect date: Date)
     func calendarView(_ calendarView: JLCalendarView, didChangeMonth month: Date)
+    func calendarView(_ calendarView: JLCalendarView, didChangeDisplayMode mode: JLCalendarDisplayMode)
+    func calendarView(_ calendarView: JLCalendarView, didChangeHeight height: CGFloat)
 }
 
 public enum JLCalendarWeekStart {
@@ -85,6 +87,7 @@ public final class JLCalendarView: UIView {
             updateHeaderText()
             updateHeaderSelection()
             reloadData()
+            delegate?.calendarView(self, didChangeDisplayMode: displayMode)
         }
     }
     
@@ -94,6 +97,8 @@ public final class JLCalendarView: UIView {
     private var holidaySet: Set<Date> = []
     private let headerHeight: CGFloat = 32
     private let weekdayLabelHeight: CGFloat = 20
+    private let headerBottomSpacing: CGFloat = 4
+    private let weekdayBottomSpacing: CGFloat = 4
     private var calendar: Calendar = .autoupdatingCurrent
     private var effectiveLocale: Locale {
         if locale.identifier == Locale.autoupdatingCurrent.identifier,
@@ -151,6 +156,7 @@ public final class JLCalendarView: UIView {
         super.init(frame: frame)
         updateCalendar()
         setupLayout()
+        updateHeightIfNeeded()
         if autoSelectToday {
             setSelectedDate(Date())
         }
@@ -177,12 +183,12 @@ public final class JLCalendarView: UIView {
             headerView.trailingAnchor.constraint(equalTo: trailingAnchor),
             headerView.heightAnchor.constraint(equalToConstant: headerHeight),
 
-            weekdayStack.topAnchor.constraint(equalTo: headerView.bottomAnchor, constant: 4),
+            weekdayStack.topAnchor.constraint(equalTo: headerView.bottomAnchor, constant: headerBottomSpacing),
             weekdayStack.leadingAnchor.constraint(equalTo: leadingAnchor),
             weekdayStack.trailingAnchor.constraint(equalTo: trailingAnchor),
             weekdayStack.heightAnchor.constraint(equalToConstant: weekdayLabelHeight),
 
-            collectionView.topAnchor.constraint(equalTo: weekdayStack.bottomAnchor, constant: 4),
+            collectionView.topAnchor.constraint(equalTo: weekdayStack.bottomAnchor, constant: weekdayBottomSpacing),
             collectionView.leadingAnchor.constraint(equalTo: leadingAnchor),
             collectionView.trailingAnchor.constraint(equalTo: trailingAnchor),
             collectionView.bottomAnchor.constraint(equalTo: bottomAnchor)
@@ -228,6 +234,11 @@ public final class JLCalendarView: UIView {
         ])
     }
 
+    public override var intrinsicContentSize: CGSize {
+        let width = bounds.width > 0 ? bounds.width : UIScreen.main.bounds.width
+        return CGSize(width: UIView.noIntrinsicMetric, height: preferredHeight(for: width))
+    }
+
     private func setupWeekdayLabels() {
         weekdayStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         let symbols = localizedWeekdaySymbols()
@@ -250,13 +261,17 @@ public final class JLCalendarView: UIView {
             days = JLCalendarManager.generateWeekDays(for: baseDate, calendar: calendar)
         }
         collectionView.reloadData()
+        invalidateIntrinsicContentSize()
+        updateHeightIfNeeded()
     }
 
     public func setSelectedDate(_ date: Date?) {
         selectedDate = date.map { calendar.startOfDay(for: $0) }
         updateHeaderText()
-        collectionView.reloadData()
+        collectionView.reloadItems(at: collectionView.indexPathsForVisibleItems)
         collectionView.layoutIfNeeded()
+        invalidateIntrinsicContentSize()
+        updateHeightIfNeeded()
     }
 
     public func setCurrentMonth(_ date: Date) {
@@ -293,9 +308,13 @@ public final class JLCalendarView: UIView {
         monthLabel.text = formatter.string(from: dateForTitle)
 
         let titles = localizedHeaderTitles()
-        displayModeControl.removeAllSegments()
-        displayModeControl.insertSegment(withTitle: titles.month, at: 0, animated: false)
-        displayModeControl.insertSegment(withTitle: titles.week, at: 1, animated: false)
+        if displayModeControl.numberOfSegments == 0 {
+            displayModeControl.insertSegment(withTitle: titles.month, at: 0, animated: false)
+            displayModeControl.insertSegment(withTitle: titles.week, at: 1, animated: false)
+        } else {
+            displayModeControl.setTitle(titles.month, forSegmentAt: 0)
+            displayModeControl.setTitle(titles.week, forSegmentAt: 1)
+        }
         todayButton.setTitle(titles.today, for: .normal)
     }
 
@@ -433,8 +452,32 @@ extension JLCalendarView: UICollectionViewDataSource, UICollectionViewDelegate {
         }
         return nil
     }
+
+    public func preferredHeight(for width: CGFloat) -> CGFloat {
+        let layout = collectionView.collectionViewLayout as? UICollectionViewFlowLayout
+        let totalSpacing = (layout?.minimumInteritemSpacing ?? 0) * 6
+        let itemWidth = (width - totalSpacing) / 7
+        let rows = displayMode == .week ? 1 : max(1, Int(ceil(Double(days.count) / 7.0)))
+        let rowSpacing = layout?.minimumLineSpacing ?? 0
+        let gridHeight = (CGFloat(rows) * itemWidth) + (CGFloat(max(0, rows - 1)) * rowSpacing)
+        return headerHeight + headerBottomSpacing + weekdayLabelHeight + weekdayBottomSpacing + gridHeight
+    }
+
+    private func updateHeightIfNeeded() {
+        let width = bounds.width > 0 ? bounds.width : UIScreen.main.bounds.width
+        let newHeight = preferredHeight(for: width)
+        delegate?.calendarView(self, didChangeHeight: newHeight)
+    }
+
+    public override func layoutSubviews() {
+        super.layoutSubviews()
+        invalidateIntrinsicContentSize()
+        updateHeightIfNeeded()
+    }
 }
 
 public extension JLCalendarViewDelegate {
     func calendarView(_ calendarView: JLCalendarView, didChangeMonth month: Date) {}
+    func calendarView(_ calendarView: JLCalendarView, didChangeDisplayMode mode: JLCalendarDisplayMode) {}
+    func calendarView(_ calendarView: JLCalendarView, didChangeHeight height: CGFloat) {}
 }
