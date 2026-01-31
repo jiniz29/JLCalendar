@@ -37,6 +37,7 @@ public final class JLCalendarView: UIView {
     public weak var delegate: JLCalendarViewDelegate?
     public var currentMonth: Date = Date() {
         didSet {
+            updateHeaderText()
             reloadData()
             delegate?.calendarView(self, didChangeMonth: currentMonth)
         }
@@ -64,6 +65,8 @@ public final class JLCalendarView: UIView {
             reloadData()
         }
     }
+    public var autoSelectToday: Bool = true
+    public var autoLoadHolidays: Bool = true
     public var weekStart: JLCalendarWeekStart = .system {
         didSet {
             updateCalendar()
@@ -79,6 +82,8 @@ public final class JLCalendarView: UIView {
             if displayMode == .week, let selectedDate {
                 currentMonth = normalizedMonth(selectedDate)
             }
+            updateHeaderText()
+            updateHeaderSelection()
             reloadData()
         }
     }
@@ -87,6 +92,7 @@ public final class JLCalendarView: UIView {
     private var days: [Date] = []
     public private(set) var selectedDate: Date?
     private var holidaySet: Set<Date> = []
+    private let headerHeight: CGFloat = 32
     private let weekdayLabelHeight: CGFloat = 20
     private var calendar: Calendar = .autoupdatingCurrent
     private var effectiveLocale: Locale {
@@ -114,6 +120,11 @@ public final class JLCalendarView: UIView {
         return view
     }()
 
+    private let headerView = UIView()
+    private let monthLabel = UILabel()
+    private let displayModeControl = UISegmentedControl(items: [])
+    private let todayButton = UIButton(type: .system)
+
     private lazy var weekdayStack: UIStackView = {
         let stack = UIStackView()
         stack.axis = .horizontal
@@ -140,6 +151,12 @@ public final class JLCalendarView: UIView {
         super.init(frame: frame)
         updateCalendar()
         setupLayout()
+        if autoSelectToday {
+            setSelectedDate(Date())
+        }
+        if autoLoadHolidays {
+            loadPublicHolidays()
+        }
         reloadData()
     }
     
@@ -148,12 +165,19 @@ public final class JLCalendarView: UIView {
     }
     
     private func setupLayout() {
+        setupHeader()
+        addSubview(headerView)
         addSubview(weekdayStack)
         addSubview(collectionView)
         collectionView.addGestureRecognizer(swipeLeft)
         collectionView.addGestureRecognizer(swipeRight)
         NSLayoutConstraint.activate([
-            weekdayStack.topAnchor.constraint(equalTo: topAnchor),
+            headerView.topAnchor.constraint(equalTo: topAnchor),
+            headerView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            headerView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            headerView.heightAnchor.constraint(equalToConstant: headerHeight),
+
+            weekdayStack.topAnchor.constraint(equalTo: headerView.bottomAnchor, constant: 4),
             weekdayStack.leadingAnchor.constraint(equalTo: leadingAnchor),
             weekdayStack.trailingAnchor.constraint(equalTo: trailingAnchor),
             weekdayStack.heightAnchor.constraint(equalToConstant: weekdayLabelHeight),
@@ -164,6 +188,44 @@ public final class JLCalendarView: UIView {
             collectionView.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
         setupWeekdayLabels()
+        updateHeaderText()
+        updateHeaderSelection()
+    }
+
+    private func setupHeader() {
+        headerView.translatesAutoresizingMaskIntoConstraints = false
+
+        monthLabel.font = .boldSystemFont(ofSize: 20)
+        monthLabel.textAlignment = .center
+        monthLabel.translatesAutoresizingMaskIntoConstraints = false
+        monthLabel.isUserInteractionEnabled = true
+        monthLabel.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(showDatePicker)))
+
+        displayModeControl.translatesAutoresizingMaskIntoConstraints = false
+        displayModeControl.setTitleTextAttributes([.font: UIFont.systemFont(ofSize: 12, weight: .medium)], for: .normal)
+        displayModeControl.setTitleTextAttributes([.font: UIFont.systemFont(ofSize: 12, weight: .semibold)], for: .selected)
+        displayModeControl.addTarget(self, action: #selector(displayModeChanged), for: .valueChanged)
+
+        todayButton.translatesAutoresizingMaskIntoConstraints = false
+        todayButton.titleLabel?.font = .systemFont(ofSize: 12, weight: .semibold)
+        todayButton.addTarget(self, action: #selector(goToToday), for: .touchUpInside)
+
+        headerView.addSubview(displayModeControl)
+        headerView.addSubview(monthLabel)
+        headerView.addSubview(todayButton)
+
+        NSLayoutConstraint.activate([
+            displayModeControl.centerYAnchor.constraint(equalTo: headerView.centerYAnchor),
+            displayModeControl.leadingAnchor.constraint(equalTo: headerView.leadingAnchor, constant: 16),
+            displayModeControl.heightAnchor.constraint(equalToConstant: 28),
+
+            todayButton.centerYAnchor.constraint(equalTo: headerView.centerYAnchor),
+            todayButton.trailingAnchor.constraint(equalTo: headerView.trailingAnchor, constant: -16),
+            todayButton.heightAnchor.constraint(equalToConstant: 28),
+
+            monthLabel.centerXAnchor.constraint(equalTo: headerView.centerXAnchor),
+            monthLabel.centerYAnchor.constraint(equalTo: headerView.centerYAnchor)
+        ])
     }
 
     private func setupWeekdayLabels() {
@@ -192,6 +254,7 @@ public final class JLCalendarView: UIView {
 
     public func setSelectedDate(_ date: Date?) {
         selectedDate = date.map { calendar.startOfDay(for: $0) }
+        updateHeaderText()
         collectionView.reloadData()
         collectionView.layoutIfNeeded()
     }
@@ -219,6 +282,75 @@ public final class JLCalendarView: UIView {
                 break
             }
         }
+    }
+
+    private func updateHeaderText() {
+        let formatter = DateFormatter()
+        formatter.locale = effectiveLocale
+        formatter.calendar = calendar
+        formatter.setLocalizedDateFormatFromTemplate("yMMMM")
+        let dateForTitle = displayMode == .week ? (selectedDate ?? currentMonth) : currentMonth
+        monthLabel.text = formatter.string(from: dateForTitle)
+
+        let titles = localizedHeaderTitles()
+        displayModeControl.removeAllSegments()
+        displayModeControl.insertSegment(withTitle: titles.month, at: 0, animated: false)
+        displayModeControl.insertSegment(withTitle: titles.week, at: 1, animated: false)
+        todayButton.setTitle(titles.today, for: .normal)
+    }
+
+    private func updateHeaderSelection() {
+        displayModeControl.selectedSegmentIndex = displayMode == .week ? 1 : 0
+    }
+
+    @objc private func displayModeChanged() {
+        displayMode = displayModeControl.selectedSegmentIndex == 1 ? .week : .month
+    }
+
+    @objc private func goToToday() {
+        let today = Date()
+        setCurrentMonth(today)
+        setSelectedDate(today)
+    }
+
+    @objc private func showDatePicker() {
+        guard let viewController = findViewController() else { return }
+        let picker = UIDatePicker()
+        picker.datePickerMode = .date
+        picker.preferredDatePickerStyle = .wheels
+        picker.locale = effectiveLocale
+        picker.calendar = calendar
+        picker.date = selectedDate ?? currentMonth
+
+        let title = localizedHeaderTitles().pickerTitle
+        let alert = UIAlertController(title: title, message: "\n\n\n\n\n\n\n\n", preferredStyle: .actionSheet)
+        alert.view.addSubview(picker)
+        picker.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            picker.centerXAnchor.constraint(equalTo: alert.view.centerXAnchor),
+            picker.topAnchor.constraint(equalTo: alert.view.topAnchor, constant: 16)
+        ])
+
+        alert.addAction(UIAlertAction(title: localizedHeaderTitles().cancel, style: .cancel))
+        alert.addAction(UIAlertAction(title: localizedHeaderTitles().confirm, style: .default, handler: { [weak self] _ in
+            guard let self else { return }
+            setCurrentMonth(picker.date)
+            setSelectedDate(picker.date)
+        }))
+
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = self
+            popover.sourceRect = CGRect(x: bounds.midX, y: headerHeight, width: 1, height: 1)
+        }
+        viewController.present(alert, animated: true)
+    }
+
+    private func localizedHeaderTitles() -> (month: String, week: String, today: String, pickerTitle: String, confirm: String, cancel: String) {
+        let language = effectiveLocale.languageCode ?? "en"
+        if language == "ko" {
+            return ("월간", "주간", "오늘", "날짜 선택", "선택", "취소")
+        }
+        return ("Month", "Week", "Today", "Select Date", "Select", "Cancel")
     }
 }
 
@@ -248,6 +380,7 @@ extension JLCalendarView: UICollectionViewDataSource, UICollectionViewDelegate {
     public func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         guard allowsSelection else { return }
         selectedDate = calendar.startOfDay(for: days[indexPath.item])
+        updateHeaderText()
         collectionView.reloadData()
         delegate?.calendarView(self, didSelect: days[indexPath.item])
     }
@@ -261,6 +394,7 @@ extension JLCalendarView: UICollectionViewDataSource, UICollectionViewDelegate {
         calendar = updated
         holidaySet = Set(holidayDates.map { calendar.startOfDay(for: $0) })
         selectedDate = selectedDate.map { calendar.startOfDay(for: $0) }
+        updateHeaderText()
     }
 
     private func localizedWeekdaySymbols() -> [String] {
@@ -289,6 +423,15 @@ extension JLCalendarView: UICollectionViewDataSource, UICollectionViewDelegate {
             selectedDate = calendar.startOfDay(for: newDate)
             currentMonth = normalizedMonth(newDate)
         }
+    }
+
+    private func findViewController() -> UIViewController? {
+        var responder: UIResponder? = self
+        while let current = responder {
+            if let vc = current as? UIViewController { return vc }
+            responder = current.next
+        }
+        return nil
     }
 }
 
