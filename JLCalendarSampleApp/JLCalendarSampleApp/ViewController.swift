@@ -14,6 +14,7 @@ class ViewController: UIViewController, JLCalendarViewDelegate {
     private let monthLabel = UILabel()
     private let displayModeControl = UISegmentedControl(items: ["월간", "주간"])
     private var calendarHeightConstraint: NSLayoutConstraint?
+    private let todayButton = UIButton(type: .system)
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -32,6 +33,11 @@ class ViewController: UIViewController, JLCalendarViewDelegate {
         displayModeControl.addTarget(self, action: #selector(displayModeChanged), for: .valueChanged)
         displayModeControl.translatesAutoresizingMaskIntoConstraints = false
 
+        todayButton.setTitle("오늘", for: .normal)
+        todayButton.titleLabel?.font = .systemFont(ofSize: 12, weight: .semibold)
+        todayButton.addTarget(self, action: #selector(goToToday), for: .touchUpInside)
+        todayButton.translatesAutoresizingMaskIntoConstraints = false
+
         calendarView.delegate = self
         calendarView.translatesAutoresizingMaskIntoConstraints = false
         calendarView.loadPublicHolidays()
@@ -40,6 +46,7 @@ class ViewController: UIViewController, JLCalendarViewDelegate {
         
         view.addSubview(monthLabel)
         view.addSubview(displayModeControl)
+        view.addSubview(todayButton)
         view.addSubview(calendarView)
         
         calendarHeightConstraint = calendarView.heightAnchor.constraint(equalToConstant: 380)
@@ -49,8 +56,11 @@ class ViewController: UIViewController, JLCalendarViewDelegate {
             monthLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16),
             monthLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             displayModeControl.centerYAnchor.constraint(equalTo: monthLabel.centerYAnchor),
-            displayModeControl.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            displayModeControl.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
             displayModeControl.heightAnchor.constraint(equalToConstant: 28),
+            todayButton.centerYAnchor.constraint(equalTo: monthLabel.centerYAnchor),
+            todayButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            todayButton.heightAnchor.constraint(equalToConstant: 28),
             
             calendarView.topAnchor.constraint(equalTo: monthLabel.bottomAnchor, constant: 16),
             calendarView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
@@ -106,6 +116,13 @@ class ViewController: UIViewController, JLCalendarViewDelegate {
         let isWeek = displayModeControl.selectedSegmentIndex == 1
         calendarView.displayMode = isWeek ? .week : .month
         calendarHeightConstraint?.constant = isWeek ? 120 : 380
+    }
+
+    @objc private func goToToday() {
+        let today = Date()
+        calendarView.setCurrentMonth(today)
+        calendarView.setSelectedDate(today)
+        monthLabel.text = formattedDate(today)
     }
 
     private func preferredLocale() -> Locale {
